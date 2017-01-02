@@ -21,8 +21,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Typeface;
@@ -31,12 +35,14 @@ import android.os.Handler;
 import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
+import android.text.format.DateFormat;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
 
 import java.lang.ref.WeakReference;
 import java.util.Calendar;
+import java.util.Locale;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
@@ -47,6 +53,9 @@ import java.util.concurrent.TimeUnit;
 public class SunWatchFace extends CanvasWatchFaceService {
     private static final Typeface NORMAL_TYPEFACE =
             Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL);
+
+    private static final Typeface LIGHT_TYPEFACE =
+            Typeface.create("sans-serif-thin", Typeface.NORMAL);
 
     /**
      * Update rate in milliseconds for interactive mode. We update once a second since seconds are
@@ -89,7 +98,11 @@ public class SunWatchFace extends CanvasWatchFaceService {
         boolean mRegisteredTimeZoneReceiver = false;
         Paint mBackgroundPaint;
         Paint mTextPaint;
+        Paint mDatePaint;
+        Paint mTranslucentPaint;
+        Paint mHaloPaint;
         boolean mAmbient;
+        boolean isRound;
         Calendar mCalendar;
         final BroadcastReceiver mTimeZoneReceiver = new BroadcastReceiver() {
             @Override
@@ -100,12 +113,18 @@ public class SunWatchFace extends CanvasWatchFaceService {
         };
         float mXOffset;
         float mYOffset;
+        float mYSpacing;
+        float haloRadius;
+
+        String maxTemp = "90°";
+        String minTemp = "45°";
 
         /**
          * Whether the display supports fewer bits for each color in ambient mode. When true, we
          * disable anti-aliasing in ambient mode.
          */
         boolean mLowBitAmbient;
+        Resources resources;
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -116,14 +135,27 @@ public class SunWatchFace extends CanvasWatchFaceService {
                     .setBackgroundVisibility(WatchFaceStyle.BACKGROUND_VISIBILITY_INTERRUPTIVE)
                     .setShowSystemUiTime(false)
                     .build());
-            Resources resources = SunWatchFace.this.getResources();
+            resources = SunWatchFace.this.getResources();
             mYOffset = resources.getDimension(R.dimen.digital_y_offset);
+            mYSpacing = resources.getDimension(R.dimen.digital_y_spacing);
+            haloRadius = resources.getDimension(R.dimen.halo_radius);
 
             mBackgroundPaint = new Paint();
             mBackgroundPaint.setColor(resources.getColor(R.color.background));
 
-            mTextPaint = new Paint();
-            mTextPaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mTextPaint = createTextPaint(resources.getColor(R.color.digital_text), NORMAL_TYPEFACE);
+            mDatePaint = createTextPaint(resources.getColor(R.color.digital_date), LIGHT_TYPEFACE);
+            mTranslucentPaint = createTextPaint(resources.getColor(R.color.digital_translucent), NORMAL_TYPEFACE);
+
+            mHaloPaint = new Paint();
+            mHaloPaint.setColor(resources.getColor(R.color.digital_halo));
+            mHaloPaint.setAntiAlias(true);
+
+            ColorMatrix matrix = new ColorMatrix();
+            matrix.setSaturation(0);
+
+            ColorMatrixColorFilter filter = new ColorMatrixColorFilter(matrix);
+            mTextPaint.setColorFilter(filter);
 
             mCalendar = Calendar.getInstance();
         }
@@ -134,10 +166,10 @@ public class SunWatchFace extends CanvasWatchFaceService {
             super.onDestroy();
         }
 
-        private Paint createTextPaint(int textColor) {
+        private Paint createTextPaint(int textColor, Typeface typeface) {
             Paint paint = new Paint();
             paint.setColor(textColor);
-            paint.setTypeface(NORMAL_TYPEFACE);
+            paint.setTypeface(typeface);
             paint.setAntiAlias(true);
             return paint;
         }
@@ -184,13 +216,18 @@ public class SunWatchFace extends CanvasWatchFaceService {
 
             // Load resources that have alternate values for round watches.
             Resources resources = SunWatchFace.this.getResources();
-            boolean isRound = insets.isRound();
+            isRound = insets.isRound();
             mXOffset = resources.getDimension(isRound
                     ? R.dimen.digital_x_offset_round : R.dimen.digital_x_offset);
             float textSize = resources.getDimension(isRound
                     ? R.dimen.digital_text_size_round : R.dimen.digital_text_size);
 
+            float dateSize = resources.getDimension(isRound
+                    ? R.dimen.digital_date_size_round : R.dimen.digital_date_size);
+
             mTextPaint.setTextSize(textSize);
+            mTranslucentPaint.setTextSize(textSize);
+            mDatePaint.setTextSize(dateSize);
         }
 
         @Override
@@ -212,6 +249,9 @@ public class SunWatchFace extends CanvasWatchFaceService {
                 mAmbient = inAmbientMode;
                 if (mLowBitAmbient) {
                     mTextPaint.setAntiAlias(!inAmbientMode);
+                    mDatePaint.setAntiAlias(!inAmbientMode);
+                    mHaloPaint.setAntiAlias(!inAmbientMode);
+                    mTranslucentPaint.setAntiAlias(!inAmbientMode);
                 }
                 invalidate();
             }
@@ -230,16 +270,65 @@ public class SunWatchFace extends CanvasWatchFaceService {
                 canvas.drawRect(0, 0, bounds.width(), bounds.height(), mBackgroundPaint);
             }
 
-            // Draw H:MM in ambient mode or H:MM:SS in interactive mode.
             long now = System.currentTimeMillis();
             mCalendar.setTimeInMillis(now);
 
-            String text = mAmbient
-                    ? String.format("%d:%02d", mCalendar.get(Calendar.HOUR),
-                    mCalendar.get(Calendar.MINUTE))
-                    : String.format("%d:%02d:%02d", mCalendar.get(Calendar.HOUR),
-                    mCalendar.get(Calendar.MINUTE), mCalendar.get(Calendar.SECOND));
-            canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
+            String text = String.format(Locale.getDefault(), "%d:%02d", mCalendar.get(Calendar.HOUR),
+                    mCalendar.get(Calendar.MINUTE));
+
+            String date = DateFormat.format("E, d MMM", mCalendar.getTime()).toString();
+
+            float centerX = bounds.centerX();
+            float centerY = bounds.centerY();
+            float textBounds = mTextPaint.measureText(text);
+            float dateBounds = mDatePaint.measureText(date);
+
+            canvas.drawText(text, centerX - textBounds/2, mYOffset, mTextPaint);
+            canvas.drawText(date, centerX - dateBounds/2, centerY-mYSpacing/2, mDatePaint);
+            canvas.drawLine(centerX - mYSpacing, centerY, centerX + mYSpacing, centerY, mTranslucentPaint);
+
+            float maxPos = (float) (bounds.right - mTextPaint.measureText(maxTemp) - 1.5*mYSpacing);
+            float minPos = (float) (bounds.right - mTranslucentPaint.measureText(minTemp) - 1.5*mYSpacing);
+
+            canvas.drawText(
+                    maxTemp,
+                    maxPos,
+                    (float) (centerY + 2.2*mYSpacing),
+                    mTextPaint)
+            ;
+            canvas.drawText(
+                    minTemp,
+                    minPos,
+                    centerY + 4*mYSpacing,
+                    mTranslucentPaint
+            );
+
+            Paint bitmapPaint = mBackgroundPaint;
+
+            if(mAmbient)
+                bitmapPaint = mTextPaint;
+
+            float haloX = centerX/2 + mYSpacing/2;
+            float haloY = bounds.bottom-centerY/2;
+
+            if(isRound)
+                haloX += mYSpacing/2;
+
+            drawHalo(canvas, haloX, haloY);
+
+            Bitmap bitmap = BitmapFactory.decodeResource(resources, R.drawable.ic_clear);
+            canvas.drawBitmap(
+                    bitmap,
+                    haloX - bitmap.getWidth()/2,
+                    haloY  - bitmap.getHeight()/2,
+                    bitmapPaint
+            );
+
+        }
+
+        private void drawHalo(Canvas canvas, float centerX, float centerY){
+            float radius = haloRadius;
+            canvas.drawOval(centerX-radius, centerY-radius, centerX+radius, centerY+radius, mHaloPaint);
         }
 
         /**
