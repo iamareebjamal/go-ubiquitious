@@ -25,6 +25,7 @@ import com.example.android.sunshine.data.WeatherContract;
 import com.example.android.sunshine.utilities.NetworkUtils;
 import com.example.android.sunshine.utilities.NotificationUtils;
 import com.example.android.sunshine.utilities.OpenWeatherJsonUtils;
+import com.example.android.sunshine.utilities.WearUtils;
 
 import java.net.URL;
 
@@ -103,6 +104,8 @@ public class SunshineSyncTask {
                 if (notificationsEnabled && oneDayPassedSinceLastNotification) {
                     NotificationUtils.notifyUserOfNewWeather(context);
                 }
+
+                WearUtils.notifyWearDevice(context);
 
             /* If the code reaches this point, we have successfully performed our sync */
 

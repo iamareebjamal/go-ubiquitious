@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#03A9F4</color>
+    <color name="background">#2196F3</color>
     <color name="digital_text">#ffffff</color>
     <color name="digital_date">#bbffffff</color>
     <color name="digital_translucent">#99ffffff</color>
     <color name="digital_halo">#22ffffff</color>
+    <color name="bg_clear">#2196F3</color>
+    <color name="bg_cloudy">#607D8B</color>
+    <color name="bg_fog">#757575</color>
+    <color name="bg_light_clouds">#78909C</color>
+    <color name="bg_light_rain">#26C6DA</color>
+    <color name="bg_rain">#5C6BC0</color>
+    <color name="bg_snow">#29B6F6</color>
+    <color name="bg_storm">#4527A0</color>
 </resources>

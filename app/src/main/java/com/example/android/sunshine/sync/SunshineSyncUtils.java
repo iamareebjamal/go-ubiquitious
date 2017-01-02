@@ -22,6 +22,7 @@ import android.net.Uri;
 import android.support.annotation.NonNull;
 
 import com.example.android.sunshine.data.WeatherContract;
+import com.example.android.sunshine.utilities.WearUtils;
 import com.firebase.jobdispatcher.Constraint;
 import com.firebase.jobdispatcher.Driver;
 import com.firebase.jobdispatcher.FirebaseJobDispatcher;
@@ -169,6 +170,8 @@ public class SunshineSyncUtils {
                 if (null == cursor || cursor.getCount() == 0) {
                     startImmediateSync(context);
                 }
+
+                WearUtils.notifyWearDevice(context);
 
                 /* Make sure to close the Cursor to avoid memory leaks! */
                 cursor.close();
